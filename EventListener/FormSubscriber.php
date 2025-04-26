@@ -20,6 +20,9 @@ class FormSubscriber implements EventSubscriberInterface
     public const CUSTOM_EMAIL_VALIDATION_EVENT = 'plugin.duplicatecheck.validate_email';
     private const REDIRECT_FLAG_ATTRIBUTE     = '_plugin_duplicate_check_redirect_url';
     private const REDIRECT_TARGET_URL         = 'https://vyhraj.cz/uzivatel-je-jiz-zaregistrovany/';
+    
+    // List of form field keys to ignore when building the redirect URL (system fields that should not be included as user parameters)
+    private const EXCLUDED_KEYS = ['email', 'formId', 'formName', 'return', 'messenger', 'form_submitted'];
 
     // --- Define Excluded Form IDs ---
     // Add the Mautic Form IDs you want to EXCLUDE from the duplicate check here.
@@ -124,7 +127,27 @@ class FormSubscriber implements EventSubscriberInterface
             $event->failedValidation('This email address already exists in our system.');
             $request = $this->requestStack->getCurrentRequest();
             if ($request) {
-                $request->attributes->set(self::REDIRECT_FLAG_ATTRIBUTE, self::REDIRECT_TARGET_URL);
+                // Build dynamic redirect URL by appending parameters from submitted mauticform data
+                $baseRedirectUrl = self::REDIRECT_TARGET_URL;
+                $mauticFormData = $request->request->get('mauticform', []);
+
+                $params = [];
+
+                // Ignore these system fields
+                foreach ($mauticFormData as $key => $value) {
+                    if (!in_array($key, self::EXCLUDED_KEYS, true) && !empty($value)) {
+                        $params[$key] = $value;
+                    }
+                }
+
+                if (!empty($params)) {
+                    $queryString = http_build_query($params);
+                    $redirectUrlWithParams = $baseRedirectUrl . (strpos($baseRedirectUrl, '?') === false ? '?' : '&') . $queryString;
+                } else {
+                    $redirectUrlWithParams = $baseRedirectUrl;
+                }
+
+                $request->attributes->set(self::REDIRECT_FLAG_ATTRIBUTE, $redirectUrlWithParams);
             }
         }
     }
